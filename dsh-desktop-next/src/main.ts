@@ -191,7 +191,7 @@ const permissions = createNativePermissions()
 const updateInstaller = new NextUpdateInstaller({ platform: process.platform, executable: process.execPath,
   language: () => windowsLanguage,
   log: error => runtime.diagnostics.append(String(error), 'warn') })
-const updates = new NextUpdates({ version, platform: process.platform, packaged: app.isPackaged, userData: electronData,
+const updates = new NextUpdates({ version, platform: process.platform, arch: process.arch, packaged: app.isPackaged, userData: electronData,
   request: (url, init) => net.fetch(url, { ...init, credentials: 'omit' }),
   artifactRequest: createArtifactRequest(),
   changed: () => { if (app.isReady() && !quitting) native.refresh() },

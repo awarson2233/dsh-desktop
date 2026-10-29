@@ -10,6 +10,8 @@ import type { NextUpdateState } from './update-state.ts'
 export interface NextUpdateOptions {
   version: string
   platform: string
+  /** CPU of the running application; the update service publishes only the x64 Windows installer. */
+  arch?: string
   packaged: boolean
   userData: string
   /** Fetch adapter for the version check. */
@@ -34,7 +36,7 @@ export class NextUpdates {
   private cacheReady?: Promise<void>
   private disposed = false
   constructor(private readonly options: NextUpdateOptions) {
-    this.state = { phase: 'idle', installable: options.packaged && ['darwin', 'win32'].includes(options.platform) }
+    this.state = { phase: 'idle', installable: options.packaged && (options.platform === 'darwin' || (options.platform === 'win32' && options.arch !== 'arm64')) }
   }
   snapshot(): NextUpdateState { return { ...this.state } }
   private initializeCache(): Promise<void> {

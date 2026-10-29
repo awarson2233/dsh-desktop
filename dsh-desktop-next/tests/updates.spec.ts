@@ -58,6 +58,14 @@ it('allows checks in development, but never downloads or replaces the developmen
   expect(updates.snapshot()).toMatchObject({ installable: false, error: 'development' })
   expect(request).toHaveBeenCalledOnce(); expect(options.prepare).not.toHaveBeenCalled()
 })
+it('checks on Windows on Arm, but never replaces it with the x64 installer the service publishes', async () => {
+  const { updates, options, request } = await fixture({ platform: 'win32', arch: 'arm64' })
+  await updates.check(); await updates.download()
+  expect(updates.snapshot()).toMatchObject({ installable: false, error: 'unsupported' })
+  expect(request).toHaveBeenCalledOnce(); expect(options.prepare).not.toHaveBeenCalled()
+  const { updates: x64 } = await fixture({ platform: 'win32', arch: 'x64' })
+  expect(x64.snapshot().installable).toBe(true)
+})
 it('does not start background update polling on Linux', async () => {
   vi.useFakeTimers()
   const { updates, request } = await fixture({ platform: 'linux', packaged: true })
