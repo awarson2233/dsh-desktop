@@ -60,7 +60,7 @@ jobs:
         working-directory: ${{ matrix.workspace }}
         run: |
           yarn exec tsc -p tsconfig.packaging.json --noEmit
-          yarn exec vitest run tests/primary-runtime.spec.ts tests/prepare-runtime.spec.ts tests/packaged-payload.spec.ts
+          yarn exec vitest run tests/primary-runtime.spec.ts tests/prepare-runtime.spec.ts tests/packaged-payload.spec.ts tests/updates.spec.ts
       - run: yarn workspace ${{ matrix.workspace }} check:win-package:platform
       - name: Build Windows arm64 installer
         env:
