@@ -12,6 +12,7 @@ const version = process.env.DSH_NEXT_BUILD_VERSION ?? sourceVersion
 const verifyMode = process.env.DSH_PACKAGE_VERIFY_MODE ?? 'win'
 // Windows packages target the build host CPU.
 const windowsArch = process.arch === 'arm64' ? 'arm64' : 'x64'
+const unpacked = windowsArch === 'x64' ? 'win-unpacked' : `win-${windowsArch}-unpacked`
 if (verifyMode === 'win-portable') {
   const archivePath = join(root, 'dist', `DSH-NEXT-${version}-${windowsArch}-Portable.zip`)
   const fd = openSync(archivePath, 'r')
@@ -22,12 +23,12 @@ if (verifyMode === 'win-portable') {
     closeSync(fd)
   }
   if (!header.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) throw new Error(`Next portable archive is not a ZIP archive: ${archivePath}`)
-  assertPortableExecutable(join(root, 'dist', 'win-unpacked', 'DSH NEXT.exe'), 'Next application')
+  assertPortableExecutable(join(root, 'dist', unpacked, 'DSH NEXT.exe'), 'Next application')
 } else if (verifyMode === 'linux') {
   assertAppImage(join(root, 'dist', `DSH-NEXT-${version}-x86_64.AppImage`), 'Next AppImage')
   assertDebArchive(join(root, 'dist', `DSH-NEXT-${version}-amd64.deb`), 'Next Debian package')
   assertElfExecutable(join(root, 'dist', 'linux-unpacked', 'dsh-desktop-next'), 'Next Linux application')
 } else {
   assertPortableExecutable(join(root, 'dist', `DSH-NEXT-${version}-${windowsArch}-Setup.exe`), 'Next NSIS installer')
-  assertPortableExecutable(join(root, 'dist', 'win-unpacked', 'DSH NEXT.exe'), 'Next application')
+  assertPortableExecutable(join(root, 'dist', unpacked, 'DSH NEXT.exe'), 'Next application')
 }

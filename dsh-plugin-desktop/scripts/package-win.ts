@@ -200,7 +200,8 @@ export function packageWindowsArtifact(
       '--config.npmRebuild=false',
       '--config.electronFuses.onlyLoadAppFromAsar=false',
       ...(compression === undefined ? [] : [`--config.win.compression=${compression}`]),
-      ...(reuseUnpacked ? [`--prepackaged=${join(options.desktopRoot, 'dist', 'win-unpacked')}`] : []),
+      // electron-builder names non-x64 output directories after the CPU.
+      ...(reuseUnpacked ? [`--prepackaged=${join(options.desktopRoot, 'dist', options.arch === 'x64' ? 'win-unpacked' : `win-${options.arch}-unpacked`)}`] : []),
     ],
     options.desktopRoot,
     electronBuilderEnvironment({
