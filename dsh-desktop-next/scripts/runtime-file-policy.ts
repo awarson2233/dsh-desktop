@@ -99,6 +99,6 @@ export function nextRuntimeFileExclusion(path: string, target: NextPackagingTarg
     if (platform !== undefined && !targets.includes(platform)) return 'node-pty other platform'
     if (file.endsWith('.pdb')) return 'node-pty debug symbols'
   }
-  if (name === '@koromix/koffi-win32-x64' && entry === 'win32_x64/koffi.lib') return 'Koffi import library'
+  if (/^@koromix\/koffi-win32-(?:x64|arm64)$/u.test(name) && /^win32_(?:x64|arm64)\/koffi\.lib$/u.test(entry)) return 'Koffi import library'
   return undefined
 }

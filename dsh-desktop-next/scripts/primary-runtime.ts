@@ -32,15 +32,20 @@ export interface PrimaryRuntimeArtifact {
 
 /** Targets the upstream lock pins. */
 export const PRIMARY_RUNTIME_TARGETS = ['mac-arm64', 'mac-x64', 'win-x64', 'linux-x64', 'linux-arm64'] as const
-/** A locked interpreter and wheel target. */
-export type PrimaryRuntimeTarget = (typeof PRIMARY_RUNTIME_TARGETS)[number]
+/** A target the upstream lock pins. */
+export type UpstreamPrimaryRuntimeTarget = (typeof PRIMARY_RUNTIME_TARGETS)[number]
+/** A locked interpreter and wheel target; Windows on Arm comes from the Desktop-owned supplement. */
+export type PrimaryRuntimeTarget = UpstreamPrimaryRuntimeTarget | 'win-arm64'
+
+/** Desktop-owned Windows on Arm lock, valid only while it matches the upstream interpreter and native wheel versions. */
+export const WIN_ARM64_RUNTIME_LOCK = resolve(import.meta.dirname, 'primary-runtime-win-arm64.json')
 
 /** The upstream download lock: interpreter releases, per-target archives and the shared pure-Python wheels. */
 export interface PrimaryRuntimeLock {
   readonly nodeVersion: string
   readonly pythonVersion: string
   readonly pythonRelease: string
-  readonly targets: Readonly<Record<PrimaryRuntimeTarget, PrimaryRuntimeArtifact>>
+  readonly targets: Readonly<Record<UpstreamPrimaryRuntimeTarget, PrimaryRuntimeArtifact>> & { readonly 'win-arm64'?: PrimaryRuntimeArtifact }
   readonly wheels: readonly PrimaryRuntimeWheel[]
   readonly pythonPackages: Readonly<Record<string, string>>
 }
@@ -88,16 +93,49 @@ export function parsePrimaryRuntimeLock(value: unknown): PrimaryRuntimeLock {
     targets[target] = artifact
   }
   if (!wheels.every(isWheel) || !isDistributionMap(pythonPackages)) throw new Error('primary runtime lock: malformed wheel records')
-  return { nodeVersion, pythonVersion, pythonRelease, targets: targets as Record<PrimaryRuntimeTarget, PrimaryRuntimeArtifact>, wheels, pythonPackages }
+  return { nodeVersion, pythonVersion, pythonRelease, targets: targets as Record<UpstreamPrimaryRuntimeTarget, PrimaryRuntimeArtifact>, wheels, pythonPackages }
 }
 
 /**
- * Read the upstream lock from the pinned checkout.
+ * Add the Windows on Arm artifact when the supplement was locked against the same interpreter
+ * releases and native wheel versions as the upstream lock; otherwise leave the target absent.
+ * @param lock - Validated upstream lock.
+ * @param supplement - Decoded `primary-runtime-win-arm64.json`.
+ * @returns The lock, with `win-arm64` when the supplement still applies.
+ */
+export function withWinArm64Supplement(lock: PrimaryRuntimeLock, supplement: unknown): PrimaryRuntimeLock {
+  if (!isRecord(supplement) || !isArtifact(supplement.artifact) || !isDistributionMap(supplement.pythonPackages)) {
+    throw new Error('primary runtime lock: malformed win-arm64 supplement')
+  }
+  const current = supplement.nodeVersion === lock.nodeVersion && supplement.pythonVersion === lock.pythonVersion
+    && supplement.pythonRelease === lock.pythonRelease
+    && Object.entries(supplement.pythonPackages).every(([name, version]) => lock.pythonPackages[name] === version)
+  return current ? { ...lock, targets: { ...lock.targets, 'win-arm64': supplement.artifact } } : lock
+}
+
+/**
+ * Read the upstream lock from the pinned checkout, with the Desktop-owned Windows on Arm supplement.
  * @param path - Lock file; defaults to the submodule's.
  * @returns The validated lock.
  */
 export function readPrimaryRuntimeLock(path: string = join(UPSTREAM_PRIMARY_RUNTIME, 'lock.json')): PrimaryRuntimeLock {
-  return parsePrimaryRuntimeLock(JSON.parse(readFileSync(path, 'utf8')))
+  const lock = parsePrimaryRuntimeLock(JSON.parse(readFileSync(path, 'utf8')))
+  return withWinArm64Supplement(lock, JSON.parse(readFileSync(WIN_ARM64_RUNTIME_LOCK, 'utf8')))
+}
+
+/**
+ * Select one target's locked archives.
+ * @param lock - Download lock.
+ * @param target - Runtime target.
+ * @returns The target's artifact.
+ * @throws When the Windows on Arm supplement no longer matches the upstream lock.
+ */
+export function lockedArtifact(lock: PrimaryRuntimeLock, target: PrimaryRuntimeTarget): PrimaryRuntimeArtifact {
+  const artifact = lock.targets[target]
+  if (artifact === undefined) {
+    throw new Error(`primary runtime lock: no ${target} artifact; refresh ${WIN_ARM64_RUNTIME_LOCK} for Node ${lock.nodeVersion}, Python ${lock.pythonVersion}+${lock.pythonRelease}`)
+  }
+  return artifact
 }
 
 /**
@@ -146,17 +184,18 @@ export async function downloadPrimaryRuntimeAsset(url: string, sha256: string, c
  * @returns Resolves after extracting the interpreter.
  */
 export async function downloadNodeRuntime(target: PrimaryRuntimeTarget, destination: string, cache: string, lock: PrimaryRuntimeLock): Promise<void> {
-  const artifact = lock.targets[target]
+  const artifact = lockedArtifact(lock, target)
   const filename = `node-v${lock.nodeVersion}-${artifact.nodeArchive}`
   const archive = await downloadPrimaryRuntimeAsset(`https://nodejs.org/dist/v${lock.nodeVersion}/${filename}`, artifact.nodeSha256, cache)
   const staging = mkdtempSync(join(tmpdir(), 'dsh-node-'))
+  const windows = target.startsWith('win-')
   try {
-    if (target === 'win-x64') await extractZip(archive, { dir: staging })
+    if (windows) await extractZip(archive, { dir: staging })
     else await extractTar({ file: archive, cwd: staging })
     const source = join(staging, filename.replace(/\.(?:zip|tar\.gz)$/u, ''))
     mkdirSync(join(destination, 'bin'), { recursive: true })
-    cpSync(join(source, ...(target === 'win-x64' ? ['node.exe'] : ['bin', 'node'])),
-      join(destination, 'bin', target === 'win-x64' ? 'node.exe' : 'node'))
+    cpSync(join(source, ...(windows ? ['node.exe'] : ['bin', 'node'])),
+      join(destination, 'bin', windows ? 'node.exe' : 'node'))
     cpSync(join(source, 'LICENSE'), join(destination, 'LICENSE'))
   } finally {
     rmSync(staging, { recursive: true, force: true })
@@ -164,7 +203,7 @@ export async function downloadNodeRuntime(target: PrimaryRuntimeTarget, destinat
 }
 
 async function pythonArchive(target: PrimaryRuntimeTarget, cache: string, lock: PrimaryRuntimeLock): Promise<string> {
-  const artifact = lock.targets[target]
+  const artifact = lockedArtifact(lock, target)
   const filename = `cpython-${lock.pythonVersion}+${lock.pythonRelease}-${artifact.pythonTarget}-install_only_stripped.tar.gz`
   return downloadPrimaryRuntimeAsset(`https://github.com/astral-sh/python-build-standalone/releases/download/${lock.pythonRelease}/${encodeURIComponent(filename)}`, artifact.pythonSha256, cache)
 }
@@ -182,7 +221,7 @@ export function primaryRuntimePayloadDigest(target: PrimaryRuntimeTarget, runtim
   // Bump format when extraction or assembly changes payload bytes without changing locked inputs.
   return createHash('sha256').update(JSON.stringify({
     format: 7, target, pythonVersion, pythonRelease, nodeVersion: pnpmVersion === undefined ? undefined : nodeVersion,
-    artifact: runtimeLock.targets[target], wheels, pythonPackages, pnpm: pnpmVersion,
+    artifact: lockedArtifact(runtimeLock, target), wheels, pythonPackages, pnpm: pnpmVersion,
   })).digest('hex')
 }
 
@@ -251,7 +290,7 @@ export async function preparePrimaryRuntime(options: PreparePrimaryRuntimeOption
     // pnpm exports only its manifest, which resolves the package entry to package.json itself.
     const pnpmManifest = createRequire(import.meta.url).resolve('pnpm')
     const pnpmVersion = (JSON.parse(readFileSync(pnpmManifest, 'utf8')) as { version: string }).version
-    const wheels = [...lock.targets[target].wheels, ...lock.wheels]
+    const wheels = [...lockedArtifact(lock, target).wheels, ...lock.wheels]
     const [, , , wheelArchives] = await Promise.all([
       (async () => {
         await downloadNodeRuntime(target, node, paths.downloads, lock)
@@ -264,7 +303,7 @@ export async function preparePrimaryRuntime(options: PreparePrimaryRuntimeOption
     ])
     const manifest: PrimaryRuntimeManifest = {
       desktopVersion: options.version,
-      platform: target === 'win-x64' ? 'win32' : target.startsWith('linux-') ? 'linux' : 'darwin',
+      platform: target.startsWith('win-') ? 'win32' : target.startsWith('linux-') ? 'linux' : 'darwin',
       arch: target.endsWith('-arm64') ? 'arm64' : 'x64',
       payloadDigest: primaryRuntimePayloadDigest(target, lock, pnpmVersion),
       python: lock.pythonVersion,

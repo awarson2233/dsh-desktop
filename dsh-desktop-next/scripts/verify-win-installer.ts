@@ -10,8 +10,10 @@ const { version: sourceVersion } = JSON.parse(readFileSync(join(root, 'package.j
 // artifact after that override, so the verifier must follow it too.
 const version = process.env.DSH_NEXT_BUILD_VERSION ?? sourceVersion
 const verifyMode = process.env.DSH_PACKAGE_VERIFY_MODE ?? 'win'
+// Windows packages target the build host CPU.
+const windowsArch = process.arch === 'arm64' ? 'arm64' : 'x64'
 if (verifyMode === 'win-portable') {
-  const archivePath = join(root, 'dist', `DSH-NEXT-${version}-x64-Portable.zip`)
+  const archivePath = join(root, 'dist', `DSH-NEXT-${version}-${windowsArch}-Portable.zip`)
   const fd = openSync(archivePath, 'r')
   const header = Buffer.alloc(4)
   try {
@@ -26,6 +28,6 @@ if (verifyMode === 'win-portable') {
   assertDebArchive(join(root, 'dist', `DSH-NEXT-${version}-amd64.deb`), 'Next Debian package')
   assertElfExecutable(join(root, 'dist', 'linux-unpacked', 'dsh-desktop-next'), 'Next Linux application')
 } else {
-  assertPortableExecutable(join(root, 'dist', `DSH-NEXT-${version}-x64-Setup.exe`), 'Next NSIS installer')
+  assertPortableExecutable(join(root, 'dist', `DSH-NEXT-${version}-${windowsArch}-Setup.exe`), 'Next NSIS installer')
   assertPortableExecutable(join(root, 'dist', 'win-unpacked', 'DSH NEXT.exe'), 'Next application')
 }

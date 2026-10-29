@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -6,7 +7,8 @@ import { zipSync } from 'fflate'
 import { expect, it } from 'vitest'
 import {
   downloadPrimaryRuntimeAsset, machOArchitectures, parsePrimaryRuntimeLock, prepareOfficeSkillAssets, primaryRuntimePayloadDigest,
-  readPrimaryRuntimeLock, smokePrimaryRuntime, unpackPrimaryRuntimeWheel, type PrimaryRuntimeLock,
+  readPrimaryRuntimeLock, smokePrimaryRuntime, unpackPrimaryRuntimeWheel, UPSTREAM_PRIMARY_RUNTIME, WIN_ARM64_RUNTIME_LOCK, withWinArm64Supplement,
+  type PrimaryRuntimeLock,
 } from '../scripts/primary-runtime.ts'
 
 type Mutable<T> = { -readonly [K in keyof T]: Mutable<T[K]> }
@@ -18,8 +20,17 @@ const relocatedWheel = Buffer.from('UEsDBAoAAAAAAASeLl3x0Nj9FAAAABQAAAAeAAAAc2Ft
 const externalLibraryWheel = Buffer.from('UEsDBBQAAAAAAAAAIVyBOE8OHAAAABwAAAAhAAAAc2FtcGxlLTEuMC5kYXRhL3B1cmVsaWIvc2FtcGxlLnB5cmVxdWlyZXMgbGlicmFyeSByZWxvY2F0aW9uClBLAQIUAxQAAAAAAAAAIVyBOE8OHAAAABwAAAAhAAAAAAAAAAAAAACAAQAAAABzYW1wbGUtMS4wLmRhdGEvcHVyZWxpYi9zYW1wbGUucHlQSwUGAAAAAAEAAQBPAAAAWwAAAAAA', 'base64')
 
 it('pins the Darwin, Windows and Linux targets Next packages and the distributions the Office smoke imports', () => {
-  for (const target of ['mac-arm64', 'mac-x64', 'win-x64', 'linux-x64', 'linux-arm64'] as const) expect(lock.targets[target].wheels.length).toBeGreaterThan(0)
+  for (const target of ['mac-arm64', 'mac-x64', 'win-x64', 'win-arm64', 'linux-x64', 'linux-arm64'] as const) expect(lock.targets[target]?.wheels.length).toBeGreaterThan(0)
   for (const name of ['numpy', 'pandas', 'python-docx', 'python-pptx', 'openpyxl', 'Pillow', 'lxml', 'XlsxWriter']) expect(lock.pythonPackages).toHaveProperty(name)
+})
+
+it('drops the Windows on Arm supplement once the upstream lock moves to other interpreter or wheel versions', () => {
+  const supplement = JSON.parse(readFileSync(WIN_ARM64_RUNTIME_LOCK, 'utf8')) as { pythonPackages: Record<string, string> }
+  const upstream = parsePrimaryRuntimeLock(JSON.parse(readFileSync(join(UPSTREAM_PRIMARY_RUNTIME, 'lock.json'), 'utf8')))
+  expect(withWinArm64Supplement(upstream, supplement).targets['win-arm64']?.pythonTarget).toBe('aarch64-pc-windows-msvc')
+  expect(withWinArm64Supplement({ ...upstream, nodeVersion: '0.0.1' }, supplement).targets['win-arm64']).toBeUndefined()
+  expect(withWinArm64Supplement(upstream, { ...supplement, pythonPackages: { ...supplement.pythonPackages, numpy: '0.0.1' } }).targets['win-arm64']).toBeUndefined()
+  expect(() => primaryRuntimePayloadDigest('win-arm64', upstream, undefined)).toThrow('no win-arm64 artifact')
 })
 
 it('rejects a lock missing a pinned target or carrying a malformed digest', () => {

@@ -1,4 +1,4 @@
-/** Build an unsigned Windows x64 artifact on a native Windows host. */
+/** Build an unsigned Windows artifact for the native Windows host CPU (x64 unless a variant opts into arm64). */
 
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -46,8 +46,10 @@ export interface WindowsPackageOptions {
   readonly env: NodeJS.ProcessEnv
   /** Platform executing the package build. */
   readonly platform: NodeJS.Platform
-  /** Node architecture executing the package build. */
+  /** Node architecture executing the package build; the package targets the same CPU. */
   readonly arch: string
+  /** Host CPUs this variant packages for; defaults to x64 only. */
+  readonly supportedArchs?: readonly string[]
   /** Node version executing the package build. */
   readonly nodeVersion: string
   /** Repository root containing the Yarn workspace. */
@@ -137,8 +139,9 @@ function assertWindowsPackageHost(options: WindowsPackageOptions, artifact: stri
   if (options.platform !== 'win32') {
     throw new Error(`Windows ${artifact} must be built on a native Windows host`)
   }
-  if (options.arch !== 'x64') {
-    throw new Error(`Windows ${artifact} requires x64 Node; received ${options.arch}`)
+  const supportedArchs = options.supportedArchs ?? ['x64']
+  if (!supportedArchs.includes(options.arch)) {
+    throw new Error(`Windows ${artifact} requires ${supportedArchs.join(' or ')} Node; received ${options.arch}`)
   }
   const versionMatch = /^(\d+)\.(\d+)\./u.exec(options.nodeVersion)
   const major = Number(versionMatch?.[1])
@@ -161,7 +164,7 @@ export function packageWindowsArtifact(
   const reuseUnpacked = options.env.DSH_WINDOWS_REUSE_UNPACKED === '1'
 
   const cleanEnvironment = withoutWindowsSigningSecrets(options.env)
-  options.log(`Building an unsigned Windows x64 ${artifact}; Authenticode is a separate release step.`)
+  options.log(`Building an unsigned Windows ${options.arch} ${artifact}; Authenticode is a separate release step.`)
   if (compression !== undefined) {
     options.log(`Packaging the ${artifact} with ${compression} compression.`)
   }
@@ -190,7 +193,7 @@ export function packageWindowsArtifact(
       options.builderCli,
       '--win',
       target,
-      '--x64',
+      `--${options.arch}`,
       '--publish',
       'never',
       '--config.win.signExecutable=false',

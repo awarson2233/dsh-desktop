@@ -1,0 +1,81 @@
+name: Windows on Arm
+
+on:
+  push:
+    branches: [woa-*]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: woa-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # Unsigned Next NSIS installer and portable archive built natively on an
+  # Arm64 runner: Windows packages target the build host CPU, so the bundled
+  # interpreters, Electron and every native prebuild are arm64.
+  desktop-windows-arm64:
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [dsh-desktop-next]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.2
+          architecture: arm64
+      - run: corepack enable
+      - name: Resolve Yarn cache folder
+        id: yarn-cache
+        run: echo "dir=$(yarn config get cacheFolder)" >> "$env:GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+          restore-keys: |
+            yarn-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache primary runtime and Electron Builder downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ matrix.workspace }}/.desktop-build/downloads
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: packaging-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.workspace }}-${{ hashFiles('yarn.lock', 'deepseek-harness/scripts/primary-runtime/lock.json', format('{0}/scripts/primary-runtime-win-arm64.json', matrix.workspace), format('{0}/package.json', matrix.workspace)) }}
+          restore-keys: |
+            packaging-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.workspace }}-
+      - run: yarn install --immutable
+      - name: Typecheck packaging scripts and run the arm64 packaging tests
+        working-directory: ${{ matrix.workspace }}
+        run: |
+          yarn exec tsc -p tsconfig.packaging.json --noEmit
+          yarn exec vitest run tests/primary-runtime.spec.ts tests/prepare-runtime.spec.ts tests/packaged-payload.spec.ts
+      - run: yarn workspace ${{ matrix.workspace }} check:win-package:platform
+      - name: Build Windows arm64 installer
+        env:
+          DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
+        run: yarn workspace ${{ matrix.workspace }} dist:win
+      - name: Build Windows arm64 portable archive
+        env:
+          DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
+          DSH_WINDOWS_REUSE_UNPACKED: '1'
+        run: yarn workspace ${{ matrix.workspace }} dist:win-portable
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.workspace }}-win-arm64
+          path: |
+            ${{ matrix.workspace }}/dist/*-arm64-Setup.exe
+            ${{ matrix.workspace }}/dist/*-arm64-Portable.zip
+          if-no-files-found: error
+          compression-level: 0

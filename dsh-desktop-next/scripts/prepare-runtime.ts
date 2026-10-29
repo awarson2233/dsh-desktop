@@ -19,9 +19,9 @@ export interface NextRuntimeTarget {
 /**
  * Payloads one Next package carries: both Darwin CPUs by default (or the single smoke CPU when
  * `DSH_MAC_SMOKE_ARCH` selects one), because macOS releases are universal and the installed slice
- * selects its payload at runtime; Windows x64; and the build host CPU on Linux.
+ * selects its payload at runtime; and the build host CPU on Windows (x64 or arm64) and Linux.
  * @param platform - Electron platform being packaged.
- * @param hostArch - Build host architecture, used on Linux where packages are single-architecture.
+ * @param hostArch - Build host architecture, used on Windows and Linux where packages are single-architecture.
  * @param env - Process environment inspected for single-architecture smoke selection.
  * @returns Locked targets and their CPUs.
  */
@@ -36,7 +36,7 @@ export function nextRuntimeTargets(
     if (arch === 'x64') return [{ target: 'mac-x64', arch: 'x64' }]
     return [{ target: 'mac-arm64', arch: 'arm64' }, { target: 'mac-x64', arch: 'x64' }]
   }
-  if (platform === 'win32') return [{ target: 'win-x64', arch: 'x64' }]
+  if (platform === 'win32') return hostArch === 'arm64' ? [{ target: 'win-arm64', arch: 'arm64' }] : [{ target: 'win-x64', arch: 'x64' }]
   if (platform === 'linux') {
     if (hostArch === 'arm64') return [{ target: 'linux-arm64', arch: 'arm64' }]
     if (hostArch === 'x64') return [{ target: 'linux-x64', arch: 'x64' }]

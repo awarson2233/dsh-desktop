@@ -19,6 +19,8 @@ import { packagingStep, packagingStepSync } from './packaging-step.ts'
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const workspaceRoot = resolve(desktopRoot, '..')
 const require = createRequire(import.meta.url)
+/** Next packages Windows for the build host CPU, including Windows on Arm. */
+const WINDOWS_ARCHS = ['x64', 'arm64'] as const
 const APP_ID = (JSON.parse(readFileSync(join(desktopRoot, 'package.json'), 'utf8')) as { build: { appId: string } }).build.appId
 
 /**
@@ -138,12 +140,12 @@ if (mode === 'dir') {
     builderCli: require.resolve('electron-builder/cli.js'), verifier: join(desktopRoot, 'scripts/verify-mac-smoke.ts'), nodeExecutable: process.execPath })
 } else if (mode === 'win') {
   await prepareInterpreters()
-  packageWindowsInstaller({ ...createWindowsPackageOptions(), desktopRoot, workspaceRoot, run, prepareRuntime,
+  packageWindowsInstaller({ ...createWindowsPackageOptions(), supportedArchs: WINDOWS_ARCHS, desktopRoot, workspaceRoot, run, prepareRuntime,
     verifier: join(desktopRoot, 'scripts/verify-win-installer.ts') })
 } else if (mode === 'win-portable') {
   await prepareInterpreters()
   const winOptions = createWindowsPackageOptions()
-  packageWindowsArtifact({ ...winOptions, env: { ...winOptions.env, DSH_PACKAGE_VERIFY_MODE: 'win-portable' }, desktopRoot, workspaceRoot, run, prepareRuntime,
+  packageWindowsArtifact({ ...winOptions, supportedArchs: WINDOWS_ARCHS, env: { ...winOptions.env, DSH_PACKAGE_VERIFY_MODE: 'win-portable' }, desktopRoot, workspaceRoot, run, prepareRuntime,
     verifier: join(desktopRoot, 'scripts/verify-win-installer.ts') }, 'zip', 'portable archive')
 } else if (mode === 'linux') {
   await prepareInterpreters()
